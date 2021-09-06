@@ -42,8 +42,8 @@ namespace AuditNetMultiThreadingRepro
                         provider.GetRequiredService<DbContextOptions<MyDbContext>>()
                     ));
             ConfigureAudit(services);
-            
-            
+
+
             services.AddControllers();
             services.AddSwaggerGen(c =>
             {
@@ -55,11 +55,26 @@ namespace AuditNetMultiThreadingRepro
 
         private void ConfigureAudit(IServiceCollection services)
         {
+            var provider = services.BuildServiceProvider();
+
             Audit.Core.Configuration.Setup()
                 .UseEntityFramework(config => config
+                    .UseDbContext<MyDbContext>(
+                        provider.GetRequiredService<DbContextOptions<MyDbContext>>()
+                    )
                     .AuditTypeMapper(x => x == typeof(AuditLogEntry) ? null : typeof(AuditLogEntry))
                     .AuditEntityAction<AuditLogEntry>((ev, entry, auditLog) => { })
-                    .IgnoreMatchedProperties(true));
+                    .IgnoreMatchedProperties(true)
+                )
+                .WithCreationPolicy(EventCreationPolicy.Manual)
+                .WithAction(a => a
+                    .OnEventSaving(scope =>
+                    {
+                        if (scope.Event.Environment.Exception != null)
+                        {
+                            scope.Discard();
+                        }
+                    }));
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
