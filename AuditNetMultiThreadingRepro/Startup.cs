@@ -3,7 +3,9 @@ using Audit.Core;
 using Audit.EntityFramework;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -37,6 +39,7 @@ namespace AuditNetMultiThreadingRepro
                     provider => () => new MyDbContext(
                         provider.GetRequiredService<DbContextOptions<MyDbContext>>()
                     ));
+            services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
             ConfigureAudit(services);
 
 
@@ -51,11 +54,11 @@ namespace AuditNetMultiThreadingRepro
 
         private void ConfigureAudit(IServiceCollection services)
         {
-            var provider = services.BuildServiceProvider();
-
             DbContext DbContextBuilder(AuditEventEntityFramework ev)
             {
-                var db = ev.EntityFrameworkEvent.GetDbContext().Database;
+                var dataDbContext = ev.EntityFrameworkEvent.GetDbContext();
+                var httpContextAccessor = dataDbContext.GetService<IHttpContextAccessor>();
+                var db = dataDbContext.Database;
                 var conn = db.GetDbConnection();
                 var tran = db.CurrentTransaction;
                 var auditContext = new MyDbContext(new DbContextOptionsBuilder<MyDbContext>()
