@@ -1,17 +1,13 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using Audit.Core;
+using Audit.EntityFramework;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.HttpsPolicy;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using Microsoft.OpenApi.Models;
 
 namespace AuditNetMultiThreadingRepro
@@ -57,24 +53,30 @@ namespace AuditNetMultiThreadingRepro
         {
             var provider = services.BuildServiceProvider();
 
+            DbContext DbContextBuilder(AuditEventEntityFramework ev)
+            {
+                var db = ev.EntityFrameworkEvent.GetDbContext().Database;
+                var conn = db.GetDbConnection();
+                var tran = db.CurrentTransaction;
+                var auditContext = new MyDbContext(new DbContextOptionsBuilder<MyDbContext>()
+                    .UseNpgsql(conn).Options);
+
+                if (tran != null)
+                {
+                    auditContext.Database.UseTransaction(tran.GetDbTransaction());
+                }
+
+                return auditContext;
+            }
+
             Audit.Core.Configuration.Setup()
                 .UseEntityFramework(config => config
-                    .UseDbContext<MyDbContext>(
-                        provider.GetRequiredService<DbContextOptions<MyDbContext>>()
-                    )
+                    .UseDbContext(DbContextBuilder)
                     .AuditTypeMapper(x => x == typeof(AuditLogEntry) ? null : typeof(AuditLogEntry))
                     .AuditEntityAction<AuditLogEntry>((ev, entry, auditLog) => { })
                     .IgnoreMatchedProperties(true)
                 )
-                .WithCreationPolicy(EventCreationPolicy.Manual)
-                .WithAction(a => a
-                    .OnEventSaving(scope =>
-                    {
-                        if (scope.Event.Environment.Exception != null)
-                        {
-                            scope.Discard();
-                        }
-                    }));
+                .WithCreationPolicy(EventCreationPolicy.Manual);
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
